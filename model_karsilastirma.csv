@@ -1,0 +1,5 @@
+model,accuracy,precision,recall,pr60,pr60_std,süre_sn
+LightGBM,0.8731,0.7818,0.657,0.8152,0.0109,0.2941
+Gradient Boosting,0.8661,0.7887,0.6067,0.793,0.0139,2.2339
+Lojistik Regresyon,0.8512,0.7339,0.6002,0.7356,0.0144,0.1986
+Random Forest,0.848,0.7106,0.6229,0.7253,0.0145,2.75

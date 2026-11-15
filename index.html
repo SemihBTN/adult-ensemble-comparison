@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ensemble Karşılaştırması: UCI Adult</title>
+<style>
+:root{--fg:#1f1f1e;--muted:#6b6a66;--bg:#faf9f5;--panel:#fff;--line:#e4e2da;--accent:#c96442;--grey:#b9b6ac;--grid:#ebe9e1}
+@media (prefers-color-scheme:dark){:root{--fg:#ecebe6;--muted:#a3a198;--bg:#1b1b19;--panel:#262624;--line:#3a3935;--accent:#e08a69;--grey:#6a675f;--grid:#33322e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+main{max-width:980px;margin:0 auto;padding:32px 20px 60px}
+h1{font-family:Georgia,serif;font-weight:400;font-size:30px;margin:0 0 8px}
+h2{font-size:18px;font-weight:600;margin:36px 0 4px}
+p{margin:0 0 10px;color:var(--muted)}
+.lead{color:var(--fg);font-size:18px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:20px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.kpi small{display:block;color:var(--muted);font-size:12px}
+.kpi b{display:block;font-family:Georgia,serif;font-weight:400;font-size:28px;font-variant-numeric:tabular-nums;margin:4px 0}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600;font-size:12px}
+svg{width:100%;height:auto;display:block}
+svg text{fill:var(--muted);font-size:12px}
+footer{margin-top:40px;font-size:13px}
+</style>
+</head>
+<body>
+<main>
+<h1>Ensemble karşılaştırması: UCI Adult</h1>
+<p class="lead" id="ozet"></p>
+<p>Senaryo: banka kredisi. Ana metrik <b>pr60</b>: modelin yüksek geliri yakalama oranı (recall) %60 iken en yüksek precision. Modeller aynı recall seviyesinde kıyaslanır.</p>
+<div class="kpis" id="kpis"></div>
+
+<h2>Modellerin pr60 skoru (5×3 CV)</h2>
+<p>Çubuk ortalama pr60, çizgi ±1 standart sapma. Yüksek olan iyi.</p>
+<div id="model-grafik"></div>
+<div class="wrap"><table id="model-tablo"></table></div>
+<p>Not: Random Forest çok çekirdekle (n_jobs=-1) çalıştığı için süresi diğerleriyle birebir kıyaslanamaz.</p>
+
+<h2>Fark gerçek mi, şans mı?</h2>
+<p>Aynı 15 fold'da pr60 farkı. Çizgi sıfırı aşmıyorsa fark kanıtlanmış sayılır.</p>
+<div id="fark-grafik"></div>
+<div class="wrap"><table id="paired-tablo"></table></div>
+
+<h2>Veri: eğitim seviyesi ve gelir</h2>
+<p>Eğitim seviyesi arttıkça >50K kazanan oranı belirgin artıyor.</p>
+<div id="egitim-grafik"></div>
+
+<h2>Adalet notu</h2>
+<p id="adalet"></p>
+
+<footer>
+<p>Yöntem: Veri UCI Adult; SQL ile temizlendi, Python ile modellendi. Veriden öğrenilen hiçbir şey test setinden öğrenilmedi; test seti en sonda tek kez kullanıldı. Rakamlar proje çıktılarından alınmış sabit bir kopyadır.</p>
+</footer>
+</main>
+<script>
+const MODELS=[
+{model:"Lojistik Regresyon",accuracy:0.8512,precision:0.7339,recall:0.6002,f1:0.6603,pr60:0.7356,pr60_std:0.0144,sure_sn:0.20},
+{model:"Random Forest",accuracy:0.8480,precision:0.7106,recall:0.6229,f1:0.6638,pr60:0.7253,pr60_std:0.0145,sure_sn:2.75},
+{model:"Gradient Boosting",accuracy:0.8661,precision:0.7887,recall:0.6067,f1:0.6858,pr60:0.7930,pr60_std:0.0139,sure_sn:2.23},
+{model:"LightGBM",accuracy:0.8731,precision:0.7818,recall:0.6570,f1:0.7139,pr60:0.8152,pr60_std:0.0109,sure_sn:0.29},
+{model:"LightGBM (ayarlı)",accuracy:0.8736,precision:0.7817,recall:0.6598,f1:0.7156,pr60:0.8206,pr60_std:0.0114,sure_sn:0.63}];
+const TEST={esik:0.565,cv_precision:0.8126,cv_recall:0.6001,test_precision:0.8129,test_recall:0.5998,test_accuracy:0.8729,test_f1:0.6903,baseline_accuracy:0.7591};
+const PAIRED=[
+{k:"LightGBM − Gradient Boosting",d:0.0222,s:0.0086,w:15,n:15,r:"Gerçek iyileşme"},
+{k:"LightGBM ayarlı − ayarsız",d:0.0054,s:0.0053,w:11,n:15,r:"Kanıtlanamadı"},
+{k:"sex + race eklenince",d:-0.0001,s:0.0068,w:8,n:15,r:"Fark yok"}];
+const EDU=[["Preschool",50,0.000],["1st-4th",166,0.036],["5th-6th",332,0.048],["7th-8th",645,0.062],["9th",514,0.053],["10th",933,0.066],["11th",1175,0.051],["12th",433,0.076],["HS-grad",10494,0.160],["Some-college",7282,0.190],["Assoc-voc",1382,0.261],["Assoc-acdm",1067,0.248],["Bachelors",5353,0.415],["Masters",1722,0.557],["Prof-school",576,0.734],["Doctorate",413,0.741]];
+const SEX={Female:0.110,Male:0.306};
+const f4=v=>v.toFixed(4),pc=v=>(v*100).toFixed(1)+"%",sg=v=>(v>=0?"+":"−")+Math.abs(v).toFixed(4);
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs,parent,text){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(text!==undefined)e.textContent=text;if(parent)parent.appendChild(e);return e}
+function svg(id,W,H,label){const s=el("svg",{viewBox:"0 0 "+W+" "+H,role:"img","aria-label":label});document.getElementById(id).appendChild(s);return s}
+function table(id,head,rows){const t=document.getElementById(id);const h=t.createTHead().insertRow();head.forEach(x=>{const c=document.createElement("th");c.textContent=x;h.appendChild(c)});const b=t.createTBody();rows.forEach(r=>{const tr=b.insertRow();r.forEach(v=>{tr.insertCell().textContent=v})})}
+
+const best=MODELS.slice().sort((a,b)=>b.pr60-a.pr60)[0];
+document.getElementById("ozet").textContent=best.model+" en yüksek pr60 skoruna ulaştı ("+f4(best.pr60)+"). Test setinde recall "+f4(TEST.test_recall)+" iken precision "+f4(TEST.test_precision)+"; sonuç CV ile tutarlı ("+f4(TEST.cv_precision)+").";
+[["Test precision",f4(TEST.test_precision),"Recall ≈ 0.60 iken"],["Test recall",f4(TEST.test_recall),"Hedef 0.60"],["Test accuracy",f4(TEST.test_accuracy),"Baseline: "+f4(TEST.baseline_accuracy)],["Seçilen eşik",TEST.esik.toFixed(3),"Eğitim verisinden seçildi"]].forEach(k=>{const d=document.createElement("div");d.className="kpi";["small","b","small"].forEach((t,i)=>{const e=document.createElement(t);e.textContent=k[i];d.appendChild(e)});document.getElementById("kpis").appendChild(d)});
+
+table("model-tablo",["Model","Accuracy","Precision","Recall","F1","pr60","± std","Süre (sn)"],MODELS.map(m=>[m.model,f4(m.accuracy),f4(m.precision),f4(m.recall),f4(m.f1),f4(m.pr60),f4(m.pr60_std),m.sure_sn.toFixed(2)]));
+table("paired-tablo",["Karşılaştırma","Ort. fark","Std","Kazanılan fold","Sonuç"],PAIRED.map(p=>[p.k,sg(p.d),f4(p.s),p.w+" / "+p.n,p.r]));
+
+(function(){const W=700,rowH=44,H=MODELS.length*rowH+34,ml=150,mr=80,s=svg("model-grafik",W,H,"Modellere göre pr60 çubuk grafiği");
+const x=v=>ml+(v-0.6)/0.3*(W-ml-mr);
+[0.6,0.7,0.8,0.9].forEach(v=>{el("line",{x1:x(v),x2:x(v),y1:4,y2:H-22,stroke:"var(--grid)"},s);el("text",{x:x(v),y:H-6,"text-anchor":"middle"},s,v.toFixed(2))});
+MODELS.forEach((m,i)=>{const y=8+i*rowH,h=rowH-14,last=i===MODELS.length-1;
+const r=el("rect",{x:ml,y:y,width:x(m.pr60)-ml,height:h,fill:last?"var(--accent)":"var(--grey)",rx:3},s);el("title",{},r,m.model+": "+f4(m.pr60)+" ± "+f4(m.pr60_std));
+el("line",{x1:x(m.pr60-m.pr60_std),x2:x(m.pr60+m.pr60_std),y1:y+h/2,y2:y+h/2,stroke:"var(--muted)","stroke-width":2},s);
+el("text",{x:ml-8,y:y+h/2+4,"text-anchor":"end"},s,m.model);
+el("text",{x:x(m.pr60+m.pr60_std)+6,y:y+h/2+4},s,f4(m.pr60))})})();
+
+(function(){const W=700,rowH=40,H=PAIRED.length*rowH+34,ml=190,mr=20,s=svg("fark-grafik",W,H,"Karşılaştırmalara göre ortalama pr60 farkı ve standart sapma");
+const lim=Math.max(...PAIRED.map(p=>Math.abs(p.d)+p.s))*1.1,x=v=>ml+(v+lim)/(2*lim)*(W-ml-mr);
+[-0.02,-0.01,0,0.01,0.02,0.03].filter(v=>Math.abs(v)<=lim).forEach(v=>{el("line",{x1:x(v),x2:x(v),y1:4,y2:H-22,stroke:v===0?"var(--muted)":"var(--grid)"},s);el("text",{x:x(v),y:H-6,"text-anchor":"middle"},s,v.toFixed(2))});
+PAIRED.forEach((p,i)=>{const cy=20+i*rowH;el("text",{x:ml-8,y:cy+4,"text-anchor":"end"},s,p.k);
+el("line",{x1:x(p.d-p.s),x2:x(p.d+p.s),y1:cy,y2:cy,stroke:"var(--muted)","stroke-width":2},s);
+const c=el("circle",{cx:x(p.d),cy:cy,r:6,fill:p.d-p.s>0?"var(--accent)":"var(--grey)"},s);el("title",{},c,p.k+": "+sg(p.d)+" ± "+f4(p.s))})})();
+
+(function(){const W=700,H=320,ml=44,mb=80,s=svg("egitim-grafik",W,H,"Eğitim seviyesine göre yüksek gelir oranı");
+const bw=(W-ml-8)/EDU.length,y=v=>H-mb-v/0.8*(H-mb-10);
+[0,0.2,0.4,0.6,0.8].forEach(v=>{el("line",{x1:ml,x2:W-8,y1:y(v),y2:y(v),stroke:"var(--grid)"},s);el("text",{x:ml-6,y:y(v)+4,"text-anchor":"end"},s,Math.round(v*100)+"%")});
+EDU.forEach((d,i)=>{const x=ml+i*bw+bw*0.1,w=bw*0.8;const r=el("rect",{x:x,y:y(d[2]),width:w,height:y(0)-y(d[2]),fill:"var(--accent)",rx:2},s);el("title",{},r,d[0]+": "+pc(d[2])+" ("+d[1]+" kişi)");
+el("text",{transform:"translate("+(x+w/2)+","+(H-mb+12)+") rotate(-40)","text-anchor":"end"},s,d[0])})})();
+
+document.getElementById("adalet").textContent="Cinsiyet ve ırk modele alınmadı. Yine de yüksek gelir oranı: Kadın "+f4(SEX.Female)+", Erkek "+f4(SEX.Male)+". relationship ve marital_status vekil (proxy) olabilir. sex+race eklemek pr60'ı değiştirmedi (fark −0.0001, std 0.0068).";
+</script>
+</body>
+</html>
